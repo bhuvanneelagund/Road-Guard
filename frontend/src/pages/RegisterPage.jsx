@@ -30,7 +30,14 @@ export default function RegisterPage() {
       });
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed. Please check inputs.');
+      const detail = err.response?.data?.detail;
+      if (Array.isArray(detail)) {
+        setError(detail.map(d => d.msg || JSON.stringify(d)).join(', '));
+      } else if (typeof detail === 'string') {
+        setError(detail);
+      } else {
+        setError(err.message || 'Registration failed. Please check inputs (password min 6 chars).');
+      }
     } finally {
       setSubmitting(false);
     }
