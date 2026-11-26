@@ -91,6 +91,12 @@ export const detectionService = {
   deleteDetection: async (id) => {
     const res = await api.delete(`/detections/${id}`);
     return res.data;
+  },
+  detectLiveFrame: async (formData) => {
+    const res = await api.post('/detections/live/frame', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
   }
 };
 

@@ -199,3 +199,125 @@ async def delete_detection(detection_id: str):
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Detection record not found.")
     return {"message": "Detection deleted successfully."}
+
+@router.post("/live/frame")
+async def detect_live_frame(
+    file: UploadFile = File(...),
+    force_demo: Optional[bool] = Form(False),
+    save_detection: Optional[bool] = Form(False),
+    road_name: Optional[str] = Form(None),
+    road_id: Optional[str] = Form(None),
+    lat: Optional[float] = Form(None),
+    lng: Optional[float] = Form(None)
+):
+    """
+    Lightweight, fast endpoint for real-time video/webcam frame inference.
+    Processes a single frame buffer via YOLO/OpenCV without disk writes unless save_detection is True.
+    """
+    import cv2
+    import numpy as np
+
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if frame is None:
+        raise HTTPException(status_code=400, detail="Invalid image frame data.")
+
+    h, w = frame.shape[:2]
+
+    # Run inference directly
+    if detector.is_weights_loaded() and not force_demo:
+        try:
+            from backend.app.ai.model_config import ModelConfig, DAMAGE_CLASSES
+            results = detector.model.predict(
+                source=frame,
+                conf=ModelConfig.CONFIDENCE_THRESHOLD,
+                iou=ModelConfig.IOU_THRESHOLD,
+                imgsz=ModelConfig.IMAGE_SIZE,
+                verbose=False
+            )
+            detections = []
+            for r in results:
+                for box in r.boxes:
+                    cls_idx = int(box.cls[0].item())
+                    cls_name = DAMAGE_CLASSES.get(cls_idx, {}).get("name", "Other Road Damage")
+                    conf = float(box.conf[0].item())
+                    x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
+                    box_area = (x2 - x1) * (y2 - y1)
+                    area_ratio = round((box_area / (h * w)) * 100, 2)
+                    severity = "High" if area_ratio > 3.0 or "Pothole" in cls_name else ("Medium" if area_ratio > 1.0 else "Low")
+                    detections.append({
+                        "class_name": cls_name,
+                        "confidence": round(conf, 3),
+                        "x1": round(x1, 1),
+                        "y1": round(y1, 1),
+                        "x2": round(x2, 1),
+                        "y2": round(y2, 1),
+                        "area_ratio": area_ratio,
+                        "estimated_severity": severity
+                    })
+            summary = detector._summarize_detections(detections)
+            is_demo = False
+            model_src = "YOLO RDD2022 Trained Model"
+        except Exception as e:
+            detections = detector._detect_with_opencv(frame)
+            summary = detector._summarize_detections(detections)
+            is_demo = False
+            model_src = f"OpenCV Spatial Edge Fallback ({e})"
+    elif not force_demo:
+        detections = detector._detect_with_opencv(frame)
+        summary = detector._summarize_detections(detections)
+        is_demo = False
+        model_src = "OpenCV Spatial Vision Pipeline"
+    else:
+        detections = detector._generate_labeled_demo_detections(w, h)
+        summary = detector._summarize_detections(detections)
+        is_demo = True
+        model_src = "Simulated Road Damage Demo Mode"
+
+    saved_doc = None
+    if save_detection and len(detections) > 0:
+        det_id = f"LIVE-{uuid.uuid4().hex[:8].upper()}"
+        # Save keyframe image to disk
+        annotated_dir = os.path.join(storage_service.upload_dir, "annotated")
+        os.makedirs(annotated_dir, exist_ok=True)
+        img_name = f"{det_id}.jpg"
+        img_path = os.path.join(annotated_dir, img_name)
+        annotated_img = ImageProcessor.draw_detections(frame, detections, is_demo=is_demo)
+        cv2.imwrite(img_path, annotated_img)
+        annotated_url = storage_service.get_relative_url(img_path)
+
+        saved_doc = {
+            "id": det_id,
+            "media_type": "live_video",
+            "original_file_url": annotated_url,
+            "annotated_file_url": annotated_url,
+            "road_name": road_name or "Live Survey Corridor",
+            "road_id": road_id,
+            "lat": lat if lat is not None else 12.9716,
+            "lng": lng if lng is not None else 77.5946,
+            "total_defects": summary.get("total", 0),
+            "potholes_count": summary.get("potholes", 0),
+            "cracks_count": summary.get("cracks", 0),
+            "surface_deterioration_count": summary.get("surface_deterioration", 0),
+            "highest_severity": summary.get("highest_severity", "None"),
+            "detected_objects": detections,
+            "is_demo_mode": is_demo,
+            "source_type": "live_video",
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+        db.detections.insert_one(saved_doc)
+
+    return {
+        "success": True,
+        "width": w,
+        "height": h,
+        "detections": detections,
+        "summary": summary,
+        "is_demo_mode": is_demo,
+        "model_source": model_src,
+        "saved_record": saved_doc,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }
+
