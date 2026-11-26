@@ -19,7 +19,14 @@ export default function LoginPage() {
       await login(email, password);
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Invalid email or password.');
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        setError('⏳ Server is waking up (Render cold start). Please wait 30 seconds and try again.');
+      } else if (!err.response) {
+        setError('🔌 Cannot reach server. Check your connection or try again shortly.');
+      } else {
+        const detail = err.response?.data?.detail;
+        setError(Array.isArray(detail) ? detail.map(d => d.msg).join(', ') : detail || 'Invalid email or password.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -94,7 +101,7 @@ export default function LoginPage() {
               disabled={submitting}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#1d63ff] to-[#00d4ff] text-white text-xs font-bold shadow-glow-cyan hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
             >
-              <span>{submitting ? 'Authenticating...' : 'Sign In'}</span>
+              <span>{submitting ? '⏳ Connecting to server...' : 'Sign In'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
