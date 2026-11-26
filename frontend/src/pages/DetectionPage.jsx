@@ -22,6 +22,7 @@ import {
   Activity,
   Gauge,
   Navigation,
+  Compass,
   Save,
   Check
 } from 'lucide-react';

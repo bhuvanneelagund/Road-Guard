@@ -1,6 +1,7 @@
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Layout
 import DashboardLayout from './layouts/DashboardLayout';
@@ -33,7 +34,7 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
 
           {/* Authenticated Dashboard Shell */}
-          <Route element={<DashboardLayout />}>
+          <Route element={<ErrorBoundary><DashboardLayout /></ErrorBoundary>}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/detections" element={<DetectionPage />} />
             <Route path="/map" element={<MapPage />} />
