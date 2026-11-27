@@ -105,13 +105,19 @@ export default function LandingPage() {
       await login(email, password);
       navigate('/dashboard');
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      if (Array.isArray(detail)) {
-        setLoginError(detail.map((d) => d.msg || JSON.stringify(d)).join(', '));
-      } else if (typeof detail === 'string') {
-        setLoginError(detail);
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        setLoginError('⏳ Server is waking up (Render cold start). Please wait 30 seconds and try again.');
+      } else if (!err.response) {
+        setLoginError('🔌 Cannot reach server. Check your connection or try again shortly.');
       } else {
-        setLoginError(err.message || 'Invalid email or password.');
+        const detail = err.response?.data?.detail;
+        if (Array.isArray(detail)) {
+          setLoginError(detail.map((d) => d.msg || JSON.stringify(d)).join(', '));
+        } else if (typeof detail === 'string') {
+          setLoginError(detail);
+        } else {
+          setLoginError('Invalid email or password credentials.');
+        }
       }
     } finally {
       setSubmittingLogin(false);
@@ -192,12 +198,12 @@ export default function LandingPage() {
               </>
             ) : (
               <>
-                <button
-                  onClick={scrollToLogin}
+                <Link
+                  to="/login"
                   className="text-xs font-semibold text-[#B8B2B0] hover:text-[#F5F2EF] px-3 py-2 transition-colors"
                 >
                   Login
-                </button>
+                </Link>
                 <Link
                   to="/dashboard"
                   className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#FF572E] to-[#FF713D] text-white text-xs font-bold shadow-glow-orange hover:opacity-95 transition-all"
